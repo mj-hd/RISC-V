@@ -1,20 +1,41 @@
-const RAM_SIZE: usize = 0x4000;
+use crate::timer::Clint;
+use anyhow::Result;
+
+const RAM_SIZE: usize = 0x10000;
 
 pub struct Bus {
-    ram: [u8; RAM_SIZE], // TODO: RAMサイズ後で調べる
+    ram: [u8; RAM_SIZE],
+    clint: Clint,
 }
 
 impl Bus {
     pub fn new() -> Self {
-        Self { ram: [0; RAM_SIZE] }
+        Self {
+            ram: [0; RAM_SIZE],
+            clint: Clint::new(),
+        }
+    }
+
+    pub fn tick(&mut self) -> Result<()> {
+        self.clint.tick()?;
+
+        Ok(())
     }
 
     pub fn read8(&self, addr: u32) -> u8 {
-        self.ram[addr as usize]
+        match addr {
+            0x1100_0000..=0x1100_BFFF => self.clint.read8(addr - 0x1100_0000),
+            0x8000_0000..=0x8000_FFFF => self.ram[addr as usize],
+            _ => 0,
+        }
     }
 
     pub fn write8(&mut self, addr: u32, val: u8) {
-        self.ram[addr as usize] = val
+        match addr {
+            0x1100_0000..=0x1100_BFFF => self.clint.write8(addr - 0x1100_0000, val),
+            0x8000_0000..=0x8000_FFFF => self.ram[addr as usize] = val,
+            _ => {}
+        }
     }
 
     pub fn read16(&self, addr: u32) -> u16 {

@@ -93,11 +93,39 @@ impl Cpu {
     }
 
     pub fn tick(&mut self) -> Result<()> {
+        self.bus.tick()?;
+
+        self.check_interrupt();
+
         self.pc = self.pc.wrapping_add(4);
 
         let ir = self.bus.read32(self.pc);
 
         self.do_mnemonic(ir)
+    }
+
+    fn check_interrupt(&mut self) {
+        if self.ustatus & 0b1000 > 0 {
+            let it = self.uie & self.uip;
+            if it > 0 {
+                self.do_interrupt(it);
+            }
+        }
+    }
+
+    fn do_interrupt(&mut self, it: u32) {
+        // 一旦、Machine Timer Interrupt Pendingだけ対応
+        if it & 0x80 == 0 {
+            return;
+        }
+
+        self.utval = 0;
+        self.uepc = self.pc;
+        self.ucause = 0x8000_0007;
+        self.ustatus = (self.ustatus & 0x08 << 4) | (self.prev_mode << 11);
+
+        self.pc = self.utvec;
+        self.prev_mode = 3;
     }
 
     fn do_mnemonic(&mut self, ir: u32) -> Result<()> {

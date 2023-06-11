@@ -5,6 +5,8 @@ use cpu::Cpu;
 
 pub mod bus;
 pub mod cpu;
+pub mod timer;
+pub mod utils;
 
 fn main() {
     let bus = Bus::new();
