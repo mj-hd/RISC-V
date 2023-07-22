@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::Read;
+
 use crate::timer::Clint;
 use anyhow::Result;
 
@@ -5,7 +8,7 @@ const RAM_SIZE: usize = 0x10000;
 
 pub struct Bus {
     ram: [u8; RAM_SIZE],
-    clint: Clint,
+    pub clint: Clint,
 }
 
 impl Bus {
@@ -64,5 +67,17 @@ impl Bus {
         self.ram[(addr + 1) as usize] = (val >> 8) as u8;
         self.ram[(addr + 2) as usize] = (val >> 16) as u8;
         self.ram[(addr + 3) as usize] = (val >> 24) as u8;
+    }
+
+    pub fn load_kernel(&mut self, v: &mut File) {
+        v.read_exact(&mut self.ram[..(v.metadata().unwrap().len() as usize)])
+            .unwrap();
+    }
+
+    pub fn load_dtb(&mut self, v: &mut File) -> u32 {
+        let offset = (RAM_SIZE as u64 - v.metadata().unwrap().len()) as usize;
+        v.read_exact(&mut self.ram[offset..(RAM_SIZE as usize)])
+            .unwrap();
+        offset as u32
     }
 }

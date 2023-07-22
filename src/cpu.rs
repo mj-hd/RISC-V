@@ -2,20 +2,32 @@ use anyhow::{bail, Result};
 
 use crate::bus::Bus;
 
+// Machineだけ対応する
+#[derive(Clone, Copy, Debug)]
+enum Mode {
+    User = 0,
+    Supervisor = 1,
+    Reserved = 2,
+    Machine = 3,
+}
+
 pub struct Cpu {
     // 汎用レジスタ
     xr: [u32; 32],
     pc: u32,
 
     // CSRレジスタ
-    ustatus: u32,
-    uie: u32,
-    utvec: u32,
-    uscratch: u32,
-    uepc: u32,
-    ucause: u32,
-    utval: u32,
-    uip: u32,
+    mstatus: u32,
+    mie: u32,
+    mtvec: u32,
+    mscratch: u32,
+    mepc: u32,
+    mcause: u32,
+    mtval: u32,
+    mip: u32,
+
+    mode: Mode,
+    prev_mode: Mode,
 
     bus: Bus,
 }
@@ -26,14 +38,16 @@ impl Cpu {
             xr: [0; 32],
             pc: 0,
             bus,
-            ustatus: 0,
-            uie: 0,
-            utvec: 0,
-            uscratch: 0,
-            uepc: 0,
-            ucause: 0,
-            utval: 0,
-            uip: 0,
+            mstatus: 0,
+            mie: 0,
+            mtvec: 0,
+            mscratch: 0,
+            mepc: 0,
+            mcause: 0,
+            mtval: 0,
+            mip: 0,
+            mode: Mode::Machine,
+            prev_mode: Mode::Machine,
         }
     }
 
@@ -48,45 +62,61 @@ impl Cpu {
         self.xr[i] = val
     }
 
+    fn get_a0(&self) -> u32 {
+        self.xr[10]
+    }
+
+    pub fn set_a0(&mut self, val: u32) {
+        self.xr[10] = val;
+    }
+
+    fn get_a1(&self) -> u32 {
+        self.xr[11]
+    }
+
+    pub fn set_a1(&mut self, val: u32) {
+        self.xr[11] = val;
+    }
+
     fn get_csr(&self, no: u16) -> u32 {
         match no {
-            0x000 => self.ustatus,
-            0x004 => self.uie,
-            0x005 => self.utvec,
-            0x040 => self.uscratch,
-            0x041 => self.uepc,
-            0x042 => self.ucause,
-            0x043 => self.utval,
-            0x044 => self.uip,
+            0x300 => self.mstatus,
+            0x304 => self.mie,
+            0x305 => self.mtvec,
+            0x340 => self.mscratch,
+            0x341 => self.mepc,
+            0x342 => self.mcause,
+            0x343 => self.mtval,
+            0x344 => self.mip,
             _ => panic!("unknown csr no {:04X}", no),
         }
     }
 
     fn set_csr(&mut self, no: u16, val: u32) {
         match no {
-            0x000 => {
-                self.ustatus = val;
+            0x300 => {
+                self.mstatus = val;
             }
-            0x004 => {
-                self.uie = val;
+            0x304 => {
+                self.mie = val;
             }
-            0x005 => {
-                self.utvec = val;
+            0x305 => {
+                self.mtvec = val;
             }
-            0x040 => {
-                self.uscratch = val;
+            0x340 => {
+                self.mscratch = val;
             }
-            0x041 => {
-                self.uepc = val;
+            0x341 => {
+                self.mepc = val;
             }
-            0x042 => {
-                self.ucause = val;
+            0x342 => {
+                self.mcause = val;
             }
-            0x043 => {
-                self.utval = val;
+            0x343 => {
+                self.mtval = val;
             }
-            0x044 => {
-                self.uip = val;
+            0x344 => {
+                self.mip = val;
             }
             _ => panic!("unknown csr no {:04X}", no),
         }
@@ -105,8 +135,10 @@ impl Cpu {
     }
 
     fn check_interrupt(&mut self) {
-        if self.ustatus & 0b1000 > 0 {
-            let it = self.uie & self.uip;
+        self.mip |= self.bus.clint.msip;
+
+        if self.mstatus & 0b1000 > 0 {
+            let it = self.mie & self.mip;
             if it > 0 {
                 self.do_interrupt(it);
             }
@@ -119,13 +151,13 @@ impl Cpu {
             return;
         }
 
-        self.utval = 0;
-        self.uepc = self.pc;
-        self.ucause = 0x8000_0007;
-        self.ustatus = (self.ustatus & 0x08 << 4) | (self.prev_mode << 11);
+        self.mtval = 0;
+        self.mepc = self.pc;
+        self.mcause = 0x8000_0007; // Interrupt: 1, Exception Code: 7 (Machine Timer Interrupt)
+        self.mstatus = (self.mstatus & 0x08 << 4) | ((self.prev_mode as u32) << 11);
 
-        self.pc = self.utvec;
-        self.prev_mode = 3;
+        self.pc = self.mtvec;
+        self.prev_mode = Mode::Machine;
     }
 
     fn do_mnemonic(&mut self, ir: u32) -> Result<()> {

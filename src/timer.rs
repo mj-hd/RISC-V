@@ -2,7 +2,7 @@ use crate::utils::ApplyByte;
 use anyhow::Result;
 
 pub struct Clint {
-    msip: u32,
+    pub msip: u32,
     mtimecmp: u64,
     mtime: u64,
 }
@@ -20,7 +20,7 @@ impl Clint {
         self.mtime = self.mtime.wrapping_add(1);
 
         if self.mtime >= self.mtimecmp {
-            self.msip |= 0x01;
+            self.msip |= 0x80;
         }
 
         Ok(())
